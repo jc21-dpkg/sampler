@@ -1,0 +1,49 @@
+pipeline {
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    disableConcurrentBuilds()
+  }
+  agent {
+    label 'rpm'
+  }
+  environment {
+    PACKAGE = "sampler"
+  }
+  stages {
+    stage('Prepare') {
+      steps {
+        ansiColor('xterm') {
+          sh 'rm -rf sign'
+          sh 'mkdir -p sign'
+
+          dir(path: 'sign') {
+            git(url: "${RPM_SIGN_GIT_REPO}", credentialsId: "${RPM_SIGN_CREDENTIALS_ID}")
+            sh 'chmod 600 .gnupg/*'
+          }
+        }
+      }
+    }
+    stage('Build') {
+      steps {
+        ansiColor('xterm') {
+          sh './build debian 9-golang'
+        }
+      }
+    }
+    stage('Publish') {
+      steps {
+        archiveArtifacts(artifacts: "${PACKAGE}*.*", caseSensitive: true, onlyIfSuccessful: true)
+      }
+    }
+  }
+  post {
+    success {
+      juxtapose event: 'success'
+      sh 'figlet "SUCCESS"'
+    }
+    failure {
+      juxtapose event: 'failure'
+      sh 'figlet "FAILURE"'
+    }
+  }
+}

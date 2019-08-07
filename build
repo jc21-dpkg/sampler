@@ -1,0 +1,128 @@
+#!/bin/bash -e
+
+##################################################
+#
+# ./build DISTRO [DOCKER_TAG]
+#
+# If no docker tag, `latest` is used
+#
+# ie:
+# ./build debian 9
+#
+##################################################
+
+CWD=$(pwd)
+CYAN='\E[1;36m'
+RED='\E[1;31m'
+YELLOW='\E[1;33m'
+GREEN='\E[1;32m'
+BLUE='\E[1;34m'
+RESET='\E[0m'
+
+DISTRO=$1
+if [ "$DISTRO" == "" ]; then
+    echo -en "${RED}ERROR: ${RESET}"
+    echo -e "You must specify a Distro to build for: debian, mint"
+    echo "ie: ./build debian"
+    exit 1
+fi
+
+DOCKER_TAG=$2
+if [ "$DOCKER_TAG" == "" ]; then
+    DOCKER_TAG=latest
+fi
+
+# Make sure jq exists
+if ! hash jq 2>/dev/null; then
+    echo -en "${RED}ERROR: ${RESET}"
+    echo -e "jq command is required"
+    exit 1
+fi
+
+# Make sure docker exists
+if ! hash docker 2>/dev/null; then
+    echo -en "${RED}ERROR: ${RESET}"
+    echo -e "docker command is required"
+    exit 1
+fi
+
+# Variables
+DOCKER_IMAGE=jc21/dpkg-${DISTRO}
+PACKAGE=$(cat dpkg.json | jq -r .PACKAGE)
+VERSION=$(cat dpkg.json | jq -r .VERSION)
+GH_USER=$(cat dpkg.json | jq -r .GH_USER)
+GH_VERSION=$(cat dpkg.json | jq -r .GH_VERSION)
+SIGN_KEY=$(cat dpkg.json | jq -r .SIGN_KEY)
+URL=
+
+export PACKAGE VERSION GH_USER GH_VERSION
+eval "URL=$(cat dpkg.json | jq -r .URL)"
+
+if [ -z "$URL" ]; then
+    echo -en "${RED}ERROR: ${RESET}"
+    echo -e "URL could not be determined from dpkg.json file"
+    exit 1
+fi
+
+echo -e "${BLUE}❯ ${GREEN}Building ${CYAN}${PACKAGE} v${VERSION} ${GREEN}for ${DISTRO}:${DOCKER_TAG}${RESET}"
+
+# Clean
+rm -rf "${PACKAGE}-${VERSION}"
+
+# Download
+echo -e "${BLUE}❯ ${YELLOW}Downloading${RESET}"
+if [ -e "${PACKAGE}_${VERSION}.orig.tar.gz" ]; then
+    echo "${PACKAGE}_${VERSION}.orig.tar.gz exists, skipping..."
+else
+    wget -nv "${URL}" -O "${PACKAGE}_${VERSION}.orig.tar.gz"
+fi
+
+# Extract
+echo -e "${BLUE}❯ ${YELLOW}Extracting${RESET}"
+tar xzf "${PACKAGE}_${VERSION}.orig.tar.gz"
+
+# Copy over debian package info
+echo -e "${BLUE}❯ ${YELLOW}Setting up ./debian folder${RESET}"
+cp -pr debian "${PACKAGE}-${VERSION}"/
+
+# Pull latest builder image
+echo -e "${BLUE}❯ ${YELLOW}Pulling docker image: ${DOCKER_IMAGE}:${DOCKER_TAG}${RESET}"
+docker pull "${DOCKER_IMAGE}:${DOCKER_TAG}"
+
+# Use the build to change the ownership of folders
+echo -e "${BLUE}❯ ${YELLOW}Temporarily changing ownership${RESET}"
+docker run --rm \
+    -v "${CWD}:/home/builder/package" \
+    -v "${CWD}/sign/.gnupg:/home/builder/.gnupg" \
+    "${DOCKER_IMAGE}:${DOCKER_TAG}" \
+    sudo chown -R builder:builder /home/builder/package /home/builder/.gnupg
+
+# Build
+echo -e "${BLUE}❯ ${YELLOW}Building${RESET}"
+set +e
+
+# Docker Run Part 1
+docker run --rm \
+    --name "dpkgbuild-${BUILD_TAG:-dpkg-${DISTRO}-${PACKAGE}}" \
+    -v "${CWD}:/home/builder/package" \
+    -v "${CWD}/sign/.gnupg:/home/builder/.gnupg" \
+    -e "GOPROXY=${GOPROXY}" \
+    -w "/home/builder/package/${PACKAGE}-${VERSION}" \
+    "${DOCKER_IMAGE}:${DOCKER_TAG}" \
+    bash -c "sudo mk-build-deps --install --tool='apt-get --no-install-recommends -y' debian/control && dpkg-buildpackage --sign-key="${SIGN_KEY}" --force-sign"
+
+BUILD_SUCCESS=$?
+
+# Change ownership back
+echo -e "${BLUE}❯ ${YELLOW}Reverting ownership${RESET}"
+docker run --rm \
+  -v "${CWD}:/home/builder/package" \
+  -v "${CWD}/sign/.gnupg:/home/builder/.gnupg" \
+  "${DOCKER_IMAGE}:${DOCKER_TAG}" \
+  sudo chown -R "$(id -u):$(id -g)" /home/builder/package /home/builder/.gnupg
+
+# do we need to exit the loop?
+if [ $BUILD_SUCCESS -ne 0 ]; then
+    echo -e "${BLUE}❯ ${RED}Exiting due to error${RESET}"
+    exit ${BUILD_SUCCESS}
+fi

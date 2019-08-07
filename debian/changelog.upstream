@@ -1,0 +1,7 @@
+Version v1.0.10:
+---------------------------------------
+
+fixed user $HOME issue for Linux
+allow no-sound mode if system libraries are not available
+added config validation for more user-friendly errors
+fixed decimal comma parsing

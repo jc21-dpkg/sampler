@@ -1,0 +1,17 @@
+Source: sampler
+Section: util
+Priority: optional
+Maintainer: Jamie Curnow <jc@jc21.com>
+Build-Depends: debhelper (>= 8.0.0), libasound2-dev
+Standards-Version: 4.3.0.1
+Homepage: https://sampler.dev
+Vcs-Git: https://github.com/sqshq/sampler.git
+Vcs-Browser: https://github.com/sqshq/sampler
+
+Package: sampler
+Architecture: any
+Multi-Arch: foreign
+Depends: libasound2, ${misc:Depends}
+Pre-Depends: ${misc:Pre-Depends}
+Description: Sampler is a tool for shell commands execution, visualization and alerting.
+  Configured with a simple YAML file.

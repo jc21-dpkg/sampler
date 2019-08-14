@@ -1,4 +1,11 @@
-Version v1.0.10:
+Version v1.0.2:
+---------------------------------------
+
+Bug fixes
+Switch to GPLv3
+
+
+Version v1.0.1:
 ---------------------------------------
 
 fixed user $HOME issue for Linux

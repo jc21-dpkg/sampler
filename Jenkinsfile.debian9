@@ -4,10 +4,7 @@ pipeline {
     disableConcurrentBuilds()
   }
   agent {
-    label 'rpm'
-  }
-  environment {
-    PACKAGE = "sampler"
+    label 'dpkg'
   }
   stages {
     stage('Prepare') {
@@ -32,7 +29,11 @@ pipeline {
     }
     stage('Publish') {
       steps {
-        archiveArtifacts(artifacts: "${PACKAGE}*.*", caseSensitive: true, onlyIfSuccessful: true)
+        script {
+          def Dpkg = readJSON file: 'dpkg.json'
+          archiveArtifacts(artifacts: "${Dpkg.PACKAGE}*.*", caseSensitive: true, onlyIfSuccessful: true)
+          dpkgGithubRelease('debian9')
+        }
       }
     }
   }
